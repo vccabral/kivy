@@ -90,10 +90,12 @@ class ButtonBehavior(object):
 
     def _do_press(self):
         self.state = 'down'
+        self.dispatch('on_press')
 
     def _do_release(self, *args):
         self.state = 'normal'
-    
+        self.dispatch('on_release')
+
     def cancel_event(self, *args):
         if self.__state_event:
             self.__state_event.cancel()
@@ -113,7 +115,6 @@ class ButtonBehavior(object):
         self.last_touch = touch
         self.__touch_time = time()
         self._do_press()
-        self.dispatch('on_press')
         return True
 
     def on_touch_move(self, touch):
@@ -134,7 +135,6 @@ class ButtonBehavior(object):
             self.__state_event = Clock.schedule_once(self._do_release, self.MIN_STATE_TIME - touchtime)
         else:
             self._do_release()
-        self.dispatch('on_release')
         return True
 
     def on_press(self):
@@ -211,6 +211,34 @@ class ToggleButtonBehavior(ButtonBehavior):
         r = ref(self, ToggleButtonBehavior._clear_groups)
         groups[group].append(r)
 
+    def on_touch_down(self, touch):
+        # note: this need to be ButtonBehavior, not ToggleButtonBehavior
+        if super(ButtonBehavior, self).on_touch_down(touch):
+            return True
+        if touch.is_mouse_scrolling:
+            return False
+        if not self.collide_point(touch.x, touch.y):
+            return False
+        if self in touch.ud:
+            return False
+        touch.grab(self)
+        touch.ud[self] = True
+        self.last_touch = touch
+        self.__touch_time = time()
+        if self.state == 'normal':
+            self._do_press()
+        else:
+            self._do_release()
+        return True
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is not self:
+            return super(ToggleButtonBehavior, self).on_touch_up(touch)
+        assert(self in touch.ud)
+        touch.ungrab(self)
+        self.last_touch = touch
+        return True
+
     def _release_group(self, current):
         if self.group is None:
             return
@@ -222,16 +250,6 @@ class ToggleButtonBehavior(ButtonBehavior):
             if widget is current:
                 continue
             widget.state = 'normal'
-
-    def _do_press(self):
-        if (not self.allow_no_selection and 
-            self.group and self.state == 'down'):
-            return
-        self._release_group(self)
-        self.state = 'normal' if self.state == 'down' else 'down'
-
-    def _do_release(self, *args):
-        pass
 
     @staticmethod
     def _clear_groups(wk):
